@@ -1,17 +1,29 @@
-# Version Control System 
+# Version Control System (VCS) in Java
 
-This is a Command-Line Interface (CLI) application for managing vehicle registration and ownership data, developed in Java. The system allows users to easily register vehicles, update information, and display vehicle details in a simple text-based interface.
+This project implements a **Version Control System (VCS)** using Java. It provides basic functionalities to manage file versions, track changes, and maintain a history of file modifications. The system allows users to perform commit operations, view file history, and manage versioned files through a simple Command-Line Interface (CLI).
 
 ## Features
-- Register new vehicles with essential details (model, number, owner, etc.).
-- Update vehicle ownership details.
-- Display vehicle information based on registration number.
-- User-friendly CLI for easy interaction.
+- **Versioning**: Track file versions and save changes made to files.
+- **Commit**: Add changes to the version history with commit messages.
+- **View History**: Display the history of a file’s versions.
+- **CLI Interface**: A simple command-line interface for interacting with the system.
 
 ## Technologies Used
-- **Java**: Main programming language used for the development of this application.
+- **Java**: The core programming language used to build this version control system.
+- **File Handling**: Uses Java’s file I/O to store version history and manage file states.
 
 ## How to Run
-1. Clone the repository:
+
+1. **Clone the repository**:
    ```bash
-   git clone https://github.com/yourusername/AVRS.git
+   git clone https://github.com/yourusername/VersionControlSystem.git
+2. **Compile and Run: Navigate to the directory containing the source files and compile the Java program**:
+   ```bash
+   javac VersionControlSystem.java
+   java VersionControlSystem
+
+**Usage**
+**Commit: To commit changes to a file, use the commit command followed by a message.**
+```bash
+java VersionControlSystem commit "Initial version of the file"
+
