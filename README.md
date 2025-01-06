@@ -1,4 +1,4 @@
-# Automated Vehicle Registration System (AVRS)
+# Version Control System 
 
 This is a Command-Line Interface (CLI) application for managing vehicle registration and ownership data, developed in Java. The system allows users to easily register vehicles, update information, and display vehicle details in a simple text-based interface.
 
