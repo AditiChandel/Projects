@@ -47,4 +47,3 @@ This project implements a **Version Control System (VCS)** using Java. It provid
 - A Graphical User Interface (GUI) for easier interaction.
 - Implementation of branching and merging functionalities, similar to Git.
 
-```
