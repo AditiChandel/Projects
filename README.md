@@ -1,6 +1,3 @@
-Here’s a refined version of your README for the **Version Control System** in Java:
-
-```markdown
 # Version Control System (VCS) in Java
 
 This project implements a **Version Control System (VCS)** using Java. It provides basic functionalities to manage file versions, track changes, and maintain a history of file modifications. The system allows users to perform commit operations, view file history, and manage versioned files through a simple Command-Line Interface (CLI).
