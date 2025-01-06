@@ -1,0 +1,681 @@
+import java.io.*;
+import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
+public class MyCommands {
+    public static void main(String[] args) {
+        if (args.length == 0) {
+            System.out.println("Usage: java MyCommand 'help'");
+            return;
+        }
+
+        String command = args.length > 0 ? args[0] : "";
+        switch (command) {
+            case "init":
+                initGit();
+                break;
+            case "cat-file":
+                if (args.length > 1) {
+                    displayBlobContents(args[1]);
+                } else {
+                    System.out.println("Please specify an object ID.");
+                }
+                break;
+            case "add":
+                if (args.length > 1) {
+                    for (int i = 1; i < args.length; i++) {
+                        addFile(args[i]);
+                    }
+                } else {
+                    System.out.println("Please specify at least one file to add.");
+                }
+                break;
+            case "commit":
+                if (args.length > 1) {
+                    String message = String.join(" ", Arrays.copyOfRange(args, 1, args.length));
+                    commit(message);
+                } else {
+                    System.out.println("Please specify a commit message.");
+                }
+                break;
+            case "restore":
+                if (args.length > 1) {
+                    try {
+                        restoreToCommit(args[1]);
+                    } catch (Exception e) {
+                        System.out.println("RESTORE ERROR = \n" + e);
+                    }
+                } else {
+                    System.out.println("Please specify the commit hash to restore.");
+                }
+                break;
+            case "help":
+                System.out.print(
+                        "\n1. init - used to initialize repo.🎬 \n" +
+                                "2. cat-file - used to watch the stored blob contents.👁 \n" +
+                                "3. add - used to add all your files to track.🔀 \n" +
+                                "4. commit - used to take snapshot and store the snapshot in history of working directory.📸\n"
+                                + "5. restore <commit-hash> - restore to the given commit hash.\n");
+                break;
+            default:
+                System.out.println("Unknown command👁. Type 'help' for more information.");
+                break;
+        }
+    }
+
+    private static void initGit() {
+        File gitDir = new File(".git");
+
+        // Check if the .git directory already exists
+        if (gitDir.exists()) {
+            System.out.println("Error: .git directory already exists.");
+            return;
+        }
+
+        try {
+            // Create the .git directory and necessary subdirectories
+            if (gitDir.mkdir()) {
+                new File(".git/objects").mkdirs();
+                new File(".git/refs/heads").mkdirs();
+
+                // Create an empty index file
+                Files.createFile(Paths.get(".git/index"));
+
+                // Write the default branch reference to HEAD
+                Path headPath = Paths.get(".git/HEAD");
+                Files.writeString(headPath, "refs/heads/main");
+
+                // Create the default branch file pointing to an empty (no commit) state
+                Path mainBranchPath = Paths.get(".git/refs/heads/main");
+                Files.writeString(mainBranchPath, ""); // Initialize with an empty commit hash
+
+                System.out.println("Initialized empty Git repository with default branch 'main'.");
+            } else {
+                System.err.println("Error: Failed to create .git directory.");
+            }
+        } catch (IOException e) {
+            System.err.println("Error initializing repository: " + e.getMessage());
+        }
+    }
+
+    private static void displayBlobContents(String objectId) {
+        try {
+            String objectPath = ".git/objects/" + objectId.substring(0, 2) + "/" + objectId.substring(2);
+            // Read the compressed data from the file
+            byte[] compressedData = Files.readAllBytes(Paths.get(objectPath));
+
+            // Decompress the data using GZIP
+            try (ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(compressedData);
+                    GZIPInputStream gzipInputStream = new GZIPInputStream(byteArrayInputStream);
+                    ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream()) {
+
+                byte[] buffer = new byte[1024];
+                int len;
+                // Read the decompressed data into the output stream
+                while ((len = gzipInputStream.read(buffer)) != -1) {
+                    byteArrayOutputStream.write(buffer, 0, len);
+                }
+
+                // Convert the decompressed data to a string and print it
+                String decompressedData = byteArrayOutputStream.toString();
+                System.out.println(decompressedData);
+            }
+        } catch (IOException e) {
+            System.out.println("Error reading object: " + e.getMessage());
+        }
+    }
+
+    private static void addFile(String filePath) {
+        try {
+            // Read file contents
+            byte[] fileData = Files.readAllBytes(Paths.get(filePath));
+            String fileHash = computeSHA1(fileData);
+
+            // Create object path
+            String objectDir = ".git/objects/" + fileHash.substring(0, 2);
+            String objectFile = objectDir + "/" + fileHash.substring(2);
+
+            // Check if the file already exists as a blob
+            if (Files.exists(Paths.get(objectFile))) {
+                System.out.println("File already exists as blob: " + fileHash);
+            } else {
+                // Create the necessary directories
+                Files.createDirectories(Paths.get(objectDir));
+
+                // Compress and write the file data as a blob
+                try (OutputStream os = new BufferedOutputStream(
+                        new GZIPOutputStream(Files.newOutputStream(Paths.get(objectFile))))) {
+                    os.write(fileData);
+                }
+                System.out.println("File added as blob: " + fileHash);
+            }
+
+            // Ensure the .git/index file exists
+            Path indexPath = Paths.get(".git/index");
+            if (!Files.exists(indexPath)) {
+                Files.createFile(indexPath);
+            }
+
+            // Read and update the staging area (index)
+            List<String> indexEntries = Files.readAllLines(indexPath);
+            String fileName = Paths.get(filePath).toString();
+
+            // Remove any existing entry for the same file
+            indexEntries.removeIf(entry -> entry.endsWith(" " + fileName));
+            Files.write(indexPath, indexEntries);
+
+            // Add the new entry to the index
+            String indexEntry = formatIndexEntry(filePath, fileHash);
+            Files.write(indexPath, indexEntry.getBytes(), StandardOpenOption.APPEND);
+
+            System.out.println("File added to staging: " + filePath);
+        } catch (IOException | NoSuchAlgorithmException e) {
+            System.out.println("Error adding file: " + e.getMessage());
+        }
+    }
+
+    private static String formatIndexEntry(String filePath, String fileHash) throws IOException {
+        // Use Unix-style file mode (100644 for regular files)
+        String fileMode = "100644";
+        String fileName = Paths.get(filePath).toString();
+        return String.format("%s %s %s\n", fileMode, fileHash, fileName);
+    }
+
+    private static String computeSHA1(byte[] data) throws NoSuchAlgorithmException {
+        MessageDigest digest = MessageDigest.getInstance("SHA-1");
+        byte[] hash = digest.digest(data);
+        StringBuilder hexString = new StringBuilder(40); // Predefined capacity for 40 characters
+        for (byte b : hash) {
+            hexString.append(Character.forDigit((b >> 4) & 0xF, 16)); // Append high nibble
+            hexString.append(Character.forDigit(b & 0xF, 16)); // Append low nibble
+        }
+        return hexString.toString();
+    }
+
+    private static void commit(String message) {
+        System.out.println("\n");
+        if (message == null || message.trim().isEmpty()) {
+            System.out.println("Error: Commit message cannot be empty.");
+            return;
+        }
+
+        try {
+            // Generate the tree hash based on staged files
+            String currentTreeHash = generateTreeHash();
+            if (currentTreeHash == null) {
+                System.out.println("Error: Failed to generate tree hash.");
+                return;
+            }
+
+            Path headPath = Paths.get(".git/HEAD");
+            if (!Files.exists(headPath)) {
+                System.out.println("Error: No head dir. Repository not initialized. Run 'init' first.");
+                return;
+            }
+            // Finding current working branch.
+            String activeBranch;
+            Path branchPath;
+
+            // Check if HEAD points to a branch
+            if (!Files.exists(Paths.get(".git/refs/heads/"))) {
+                // Initialize the default branch as "main" if no branches exist
+                Files.createDirectories(Paths.get(".git/refs/heads/"));
+                Files.writeString(headPath, "main"); // Set default branch in HEAD
+                activeBranch = "main";
+                branchPath = Paths.get(".git/" + activeBranch);
+            } else {
+                // Get the current active branch from HEAD
+                activeBranch = Files.readString(headPath).trim();
+                branchPath = Paths.get(".git/" + activeBranch);
+            }
+            String lastCommitHash = null;
+            String lastTreeHash = null;
+
+            // If the branch file exists, read the last commit hash
+            if (Files.exists(branchPath)) {
+                lastCommitHash = Files.readString(branchPath).trim();
+                if (lastCommitHash != null && !lastCommitHash.isEmpty()) {
+                    lastTreeHash = extractTreeHash(lastCommitHash);
+                }
+            }
+            // Check if there are no changes to commit
+            if (lastTreeHash != null && currentTreeHash.equals(lastTreeHash)) {
+                System.out.println("No changes to commit.");
+                return;
+            }
+
+            // Prepare commit content
+            String author = System.getProperty("user.name", "Unknown Author");
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            String commitContent = String.format(
+                    "tree %s\nparent %s\nmessage %s\nauthor %s\ndate %s\n",
+                    currentTreeHash,
+                    lastCommitHash != null ? lastCommitHash : "",
+                    message,
+                    author,
+                    timestamp);
+
+            // Compute the commit hash
+            byte[] commitData = commitContent.getBytes();
+            String commitHash = computeSHA1(commitData);
+
+            System.out.println("Commit Hash: " + commitHash); // Debug output
+
+            // Store commit object
+            String commitDir = ".git/objects/" + commitHash.substring(0, 2);
+            String commitFile = commitDir + "/" + commitHash.substring(2);
+            Files.createDirectories(Paths.get(commitDir));
+            Files.write(Paths.get(commitFile), commitData, StandardOpenOption.CREATE);
+
+            // Update the branch reference with the new commit hash
+            Files.writeString(branchPath, commitHash);
+
+            System.out.println("Commit created successfully with hash: " + commitHash);
+            System.out.println("Branch '" + activeBranch + "' updated.");
+        } catch (IOException | NoSuchAlgorithmException e) {
+            System.err.println("Error during commit: " + e);
+        }
+    }
+
+    private static String generateTreeHash() throws IOException, NoSuchAlgorithmException {
+        // Prepare a byte array to store tree content
+        ByteArrayOutputStream treeContentStream = new ByteArrayOutputStream();
+        Path indexPath = Paths.get(".git/index");
+
+        // Check if the index file exists
+        if (!Files.exists(indexPath)) {
+            System.out.println("Error: Index file not found.");
+            return null;
+        }
+
+        // Read the index file to get staged files
+        List<String> indexEntries = Files.readAllLines(indexPath);
+        for (String entry : indexEntries) {
+            String[] parts = entry.split(" ");
+            if (parts.length >= 3) {
+                String fileMode = parts[0];
+                String blobHash = parts[1];
+                String filePath = parts[2];
+
+                // Write the file mode, file path, and null byte to the tree content stream
+                treeContentStream.write((fileMode + " " + filePath + "\0").getBytes());
+
+                // Append the raw blob hash in binary format
+                treeContentStream.write((blobHash.getBytes()));
+            }
+        }
+
+        byte[] treeContent = treeContentStream.toByteArray();
+
+        // Create the tree header
+        String treeHeader = "tree " + treeContent.length + "\0";
+
+        // Combine header and content into the final tree object data
+        ByteArrayOutputStream treeObjectStream = new ByteArrayOutputStream();
+        treeObjectStream.write(treeHeader.getBytes());
+        treeObjectStream.write(treeContent);
+
+        byte[] fullTreeBytes = treeObjectStream.toByteArray();
+
+        // Compute the tree hash
+        String treeHash = computeSHA1(fullTreeBytes);
+
+        // Store the tree object in the Git object store
+        String treeDir = ".git/objects/" + treeHash.substring(0, 2);
+        String treeFile = treeDir + "/" + treeHash.substring(2);
+        Files.createDirectories(Paths.get(treeDir));
+        Files.write(Paths.get(treeFile), fullTreeBytes, StandardOpenOption.CREATE);
+
+        return treeHash;
+    }
+
+    private static String extractTreeHash(String commitHash) throws IOException {
+        String commitDir = ".git/objects/" + commitHash.substring(0, 2);
+        String commitFile = commitDir + "/" + commitHash.substring(2);
+
+        if (!Files.exists(Paths.get(commitFile))) {
+            throw new IOException("Commit object not found.");
+        }
+        // Read and decompress the commit object
+        byte[] commitData = Files.readAllBytes(Paths.get(commitFile));
+        String commitContent = new String(commitData);
+
+        // Extract tree hash from the line starting with "tree"
+        for (String line : commitContent.split("\n")) {
+            if (line.startsWith("tree ")) {
+                return line.split(" ")[1];
+            }
+        }
+
+        throw new IOException("Tree hash not found in commit object.");
+    }
+
+    private static Map<String, String> loadTreeObject(String commitHash) throws IOException {
+        Path commitPath = Paths.get(".git/objects/" + commitHash.substring(0, 2) + "/" + commitHash.substring(2));
+
+        // Read and parse the commit object
+        String commitContent = Files.readString(commitPath);
+        String[] lines = commitContent.split("\n");
+        String treeHash = null;
+
+        for (String line : lines) {
+            if (line.startsWith("tree: ")) {
+                treeHash = line.substring(6).trim();
+                break;
+            }
+        }
+
+        if (treeHash == null) {
+            throw new IOException("Tree hash not found in commit object: " + commitHash);
+        }
+
+        // Load the tree object
+        return parseTreeObject(treeHash);
+    }
+
+    private static Map<String, String> parseTreeObject(String treeHash) throws IOException {
+        Path treePath = Paths.get(".git/objects/" + treeHash.substring(0, 2) + "/" + treeHash.substring(2));
+
+        // Read and parse the tree object
+        String treeContent = Files.readString(treePath);
+        String[] lines = treeContent.split("\n");
+
+        Map<String, String> tree = new HashMap<>();
+        for (String line : lines) {
+            String[] parts = line.split(" ");
+            if (parts.length == 2) {
+                tree.put(parts[1], parts[0]); // filePath -> blobHash
+            }
+        }
+
+        return tree;
+    }
+
+    private static void resetIndex(Map<String, String> tree) throws IOException {
+        Path indexPath = Paths.get(".git/index");
+
+        // Clear the index
+        Files.deleteIfExists(indexPath);
+        Files.createFile(indexPath);
+
+        // Write the new tree to the index
+        List<String> indexEntries = new ArrayList<>();
+        for (Map.Entry<String, String> entry : tree.entrySet()) {
+            String line = entry.getValue() + " " + entry.getKey(); // blobHash filePath
+            indexEntries.add(line);
+            System.out.println(indexEntries); // error handling.
+        }
+
+        Files.write(indexPath, indexEntries);
+
+        System.out.println("Index updated to match the target branch.");
+    }
+
+    private static void restoreToCommit(String commitHash) {
+        System.out.println("\n");
+        // Path to Git objects directory
+        try {
+            Path objectsDir = Paths.get(".git/objects");
+
+            // Read the commit object
+            Path commitFilePath = objectsDir.resolve(commitHash.substring(0, 2)).resolve(commitHash.substring(2));
+            if (!Files.exists(commitFilePath)) {
+                System.out.println("Error: Commit object not found.");
+                return;
+            }
+            // Decompress and read the commit object
+            byte[] commitData = Files.readAllBytes(commitFilePath);
+            String commitContent = new String(commitData);
+            String[] commitLines = commitContent.split("\n");
+
+            // Extract tree hash from the commit object
+            String treeHash = null;
+            for (String line : commitLines) {
+                if (line.startsWith("tree ")) {
+                    treeHash = line.split(" ")[1];
+                    break;
+                }
+            }
+            if (treeHash == null) {
+                System.out.println("Error: Tree hash not found in commit object.");
+                return;
+            }
+
+            // Restore files from the tree object
+            getBlobDataFromTreeHash(treeHash);
+
+            System.out.println("Files restored to the state of commit: " + commitHash);
+        } catch (Exception e) {
+            System.out.println("Error in restoreToCommit: " + e.getMessage());
+        }
+    }
+
+    // Method to get blob data from a tree hash
+    public static void getBlobDataFromTreeHash(String treeHash) throws IOException {
+        // Get the tree object from the object store
+        String treeDir = ".git/objects/" + treeHash.substring(0, 2);
+        String treeFile = treeDir + "/" + treeHash.substring(2);
+
+        // Read the tree object file
+        byte[] treeData = Files.readAllBytes(Paths.get(treeFile));
+
+        String decompressedData = new String(treeData);
+
+        // Print the decompressed tree data (for debugging)
+        System.out.println("Decompressed Tree Data: " + new String(decompressedData));
+
+        // Parse the tree content to extract blob hashes and file paths
+        List<Map<String, String>> blobs = parseTree(decompressedData);
+
+        // Iterate over each map in the list
+        for (Map<String, String> blob : blobs) {
+            // Iterate over the entries in each map
+            for (Map.Entry<String, String> entry : blob.entrySet()) {
+                String filePath = entry.getKey();
+                String blobHash = entry.getValue();
+
+                // Fetch the blob data
+                getBlobDatas(blobHash, filePath);
+            }
+        }
+
+    }
+
+    // Helper method to parse the tree object and extract file paths and blob hashes
+    private static List<Map<String, String>> parseTree(String treeData) {
+        String[] parts = treeData.split(" ");
+
+        // List to store the file name and hash maps
+        List<Map<String, String>> fileEntries = new ArrayList<>();
+
+        // Iterate through the parts
+        for (String part : parts) {
+            if (part.contains(".")) {
+                // Get the last 40 characters as the hash
+                String hash = part.substring(part.indexOf(".") + 4);
+
+                // The rest is the filename
+                String filename = part.substring(0, part.indexOf(".") + 4);
+
+                // Create a map to store filename and hash
+                Map<String, String> fileEntry = new HashMap<>();
+                fileEntry.put(filename, hash);
+
+                // Add the map to the list
+                fileEntries.add(fileEntry);
+            }
+        }
+
+        return fileEntries;
+
+    }
+
+    // Helper method to fetch the blob data from a blob hash and restore files.
+    private static void getBlobDatas(String blobHash, String fileName) throws IOException {
+        blobHash = blobHash.trim();
+        String blobDir = ".git/objects/" + blobHash.substring(0, 2);
+        String blobFile = blobDir + "/";
+
+        // Check if the directory exists
+        if (Files.exists(Paths.get(blobDir)) && Files.isDirectory(Paths.get(blobDir))) {
+            // Iterate through all files in the directory
+            String startingLetters = new String(blobHash.substring(2, 5));
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(Paths.get(blobDir), startingLetters + "*")) {
+                for (Path entry : stream) {
+                    if (Files.isRegularFile(entry)) {
+                        System.out.println("Found file: " + entry.getFileName());
+                        blobFile = blobFile + entry.getFileName().toString();
+                    }
+                }
+            }
+        } else {
+            System.out.println("Directory does not exist or is not a directory.");
+        }
+
+        if (Files.exists(Paths.get(blobFile))) {
+            // Decompress the file data
+            byte[] fileData = decompressGZIPFile(Paths.get(blobFile));
+
+            System.out.println("File data restored to: " + new String(fileData));
+            Files.write(Paths.get(fileName), fileData);
+        } else {
+            System.out.println("File blob not found for hash: " + blobFile);
+        }
+
+    }
+
+    // decompress decompress data
+    private static byte[] decompressGZIPFile(Path gzipFilePath) throws IOException {
+        try (InputStream fis = new FileInputStream(gzipFilePath.toFile());
+                GZIPInputStream gis = new GZIPInputStream(fis);
+                ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = gis.read(buffer)) != -1) {
+                baos.write(buffer, 0, bytesRead);
+            }
+
+            return baos.toByteArray();
+        }
+    }
+
+    // Branching code starts.
+    private static void createBranch(String branchName) {
+        try {
+            // Path to the branch file
+            Path branchPath = Paths.get(".git/refs/heads/" + branchName);
+
+            // Check if branch already exists
+            if (Files.exists(branchPath)) {
+                System.out.println("Branch '" + branchName + "' already exists.");
+                return;
+            }
+
+            // Read current HEAD to get the active branch
+            String activeBranch = Files.readString(Paths.get(".git/HEAD")).trim();
+            Path activeBranchPath = Paths.get(".git/" + activeBranch);
+            System.out.println("active branch which should be main = " + activeBranch + "\t acitiveBranchPath = "
+                    + activeBranchPath);
+
+            // Check if the active branch exists
+            if (!Files.exists(activeBranchPath)) {
+                System.out.println("Error: Active branch does not exist.");
+                return;
+            }
+
+            // Read the current commit hash of the active branch
+            String currentCommitHash = Files.readString(activeBranchPath).trim();
+
+            // Create new branch file pointing to the same commit
+            Files.createDirectories(branchPath.getParent());
+            Files.writeString(branchPath, currentCommitHash);
+            System.out.println("Branch '" + branchName + "' created, pointing to commit " + currentCommitHash);
+
+        } catch (IOException e) {
+            System.out.println("Error creating branch: " + e.getMessage());
+        }
+    }
+
+    private static void switchBranch(String branchName) {
+        try {
+            Path branchPath = Paths.get(".git/refs/heads/" + branchName);
+
+            // Check if the branch exists
+            if (!Files.exists(branchPath)) {
+                System.out.println("Branch '" + branchName + "' does not exist.");
+                return;
+            }
+
+            // Read the current branch reference from HEAD
+            String headContents = Files.readString(Paths.get(".git/HEAD")).trim();
+
+            // Check if already on the desired branch
+            if (headContents.equals("refs/heads/" + branchName)) {
+                System.out.println("You are already on branch '" + branchName + "'.");
+                return;
+            }
+            System.out.println("\nCHECKING DONE\n"); // error handling.
+
+            // Get the commit hash of the target branch
+            String targetCommitHash = Files.readString(branchPath).trim();
+
+            System.out.println("\ntargetCommitHash = " + targetCommitHash + "\n"); // error handling.
+
+            // Read the tree object of the target commit
+            if (targetCommitHash.length() != 0) {
+                Map<String, String> targetTree = loadTreeObject(targetCommitHash);
+
+                System.out.println("\ntargetTree = " + targetTree + "\n"); // error handling.
+
+                // Reset the index to match the target branch
+                resetIndex(targetTree);
+
+                System.out.println("\nRESET TARGET TREE DONE\n"); // error handling.
+
+                // Synchronize the working directory with the index
+                // synchronizeWorkingDirectory(targetTree);
+
+                try {
+                    // RESTORE CODE ENTER HERE!
+                } catch (Exception e) {
+                    System.out.println("ERROR IN RESTORING FILES FROM TREEE = \n" + e);
+                }
+                System.out.println("\nSYNC DONE !\n"); // error handling.
+            }
+
+            // Update HEAD to point to the new branch
+            Files.writeString(Paths.get(".git/HEAD"), "refs/heads/" + branchName);
+            System.out.println("Switched to branch '" + branchName + "'.\n");
+
+        } catch (IOException e) {
+            System.out.println("Error switching branch: " + e);
+        }
+    }
+
+    private static void listBranches() {
+        try {
+            Path branchesDir = Paths.get(".git/refs/heads/");
+            if (!Files.exists(branchesDir)) {
+                System.out.println("No branches available.");
+                return;
+            }
+
+            Files.list(branchesDir)
+                    .map(Path::getFileName)
+                    .map(Path::toString)
+                    .forEach(branch -> System.out.println(branch));
+        } catch (IOException e) {
+            System.out.println("Error listing branches: " + e.getMessage());
+        }
+    }
+
+}
