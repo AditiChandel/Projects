@@ -1,3 +1,6 @@
+Here’s a refined version of your README for the **Version Control System** in Java:
+
+```markdown
 # Version Control System (VCS) in Java
 
 This project implements a **Version Control System (VCS)** using Java. It provides basic functionalities to manage file versions, track changes, and maintain a history of file modifications. The system allows users to perform commit operations, view file history, and manage versioned files through a simple Command-Line Interface (CLI).
@@ -17,17 +20,34 @@ This project implements a **Version Control System (VCS)** using Java. It provid
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/yourusername/VersionControlSystem.git
-2. **Compile and Run: Navigate to the directory containing the source files and compile the Java program**:
+   ```
+
+2. **Compile and Run**:
+   Navigate to the directory containing the source files and compile the Java program:
    ```bash
    javac VersionControlSystem.java
    java VersionControlSystem
-3. **Usage**
-   **Commit: To commit changes to a file, use the commit command followed by a message.**
+   ```
+
+## Usage
+- **Commit**: To commit changes to a file, use the `commit` command followed by a message.
    ```bash
    java VersionControlSystem commit "Initial version of the file"
-**View History: To view the version history of a file, use the history command.**
-```bash
-java VersionControlSystem history filename
+   ```
 
+- **View History**: To view the version history of a file, use the `history` command.
+   ```bash
+   java VersionControlSystem history filename
+   ```
 
+## Project Structure
+- **`VersionControlSystem.java`**: Main class to handle the system's core logic (committing, viewing history, etc.).
+- **`FileVersion.java`**: Class to represent the file versions and track changes.
+- **`Commit.java`**: Class to manage individual commit details and messages.
 
+## Future Enhancements
+- Integration with a database for persistent storage of file versions.
+- A Graphical User Interface (GUI) for easier interaction.
+- Implementation of branching and merging functionalities, similar to Git.
+
+```
