@@ -1,0 +1,10 @@
+# Ignore compiled class files
+*.class
+
+# Ignore IDE files
+.idea/
+*.iml
+
+# Ignore system files
+.DS_Store
+Thumbs.db
