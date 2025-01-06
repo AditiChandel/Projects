@@ -21,9 +21,13 @@ This project implements a **Version Control System (VCS)** using Java. It provid
    ```bash
    javac VersionControlSystem.java
    java VersionControlSystem
-
-**Usage**
-**Commit: To commit changes to a file, use the commit command followed by a message.**
+3. **Usage**
+   **Commit: To commit changes to a file, use the commit command followed by a message.**
+   ```bash
+   java VersionControlSystem commit "Initial version of the file"
+**View History: To view the version history of a file, use the history command.**
 ```bash
-java VersionControlSystem commit "Initial version of the file"
+java VersionControlSystem history filename
+
+
 
